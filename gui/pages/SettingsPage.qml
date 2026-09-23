@@ -13,6 +13,11 @@ Rectangle {
     // RS485/UART diagnostic backend.
     signal slaveTestRequested(int slaveAddress)
 
+    // Requests a bus discovery scan. In production the hardware
+    // backend will answer through reportDiscoveredSlave() and
+    // finishSlaveDiscovery().
+    signal slaveDiscoveryRequested()
+
     // Main.qml owns the inactivity timer. Settings only requests
     // a new timeout value.
     signal idleTimeoutRequested(int seconds)
@@ -24,7 +29,7 @@ Rectangle {
 
     Component.onCompleted: {
         console.log(
-            "SETTINGS PAGE | v3.4.1 SAFE | LOADED"
+            "SETTINGS PAGE | v4.1 SAFE DISCOVERY | LOADED"
         )
     }
 
@@ -55,7 +60,7 @@ Rectangle {
     property string gatewayIp: "192.168.1.1"
     property string tcpPort: "5000"
 
-    property string transportType: "RS485"
+    property string transportType: "Wired"
     property string baudRate: "115200"
 
     property string slaveCount: "1"
@@ -92,6 +97,126 @@ Rectangle {
             activeChannels: 12
             communicationState: "unknown"
             deviceIdentifier: ""
+        }
+    }
+
+
+    // Devices found physically on the bus. This is deliberately
+    // separate from slaveConfigModel so an attached Slave can be
+    // shown before it is part of the configured locker structure.
+    ListModel {
+        id: discoveredSlaveModel
+    }
+
+    property bool discoveryRunning: false
+    property string discoveryStatusText:
+        qsTr("برای شناسایی Slaveهای روی باس، «جستجوی Slaveها» را بزنید")
+
+
+    function findDiscoveredRow(slaveAddress) {
+        for (var i = 0; i < discoveredSlaveModel.count; i++) {
+            if (discoveredSlaveModel.get(i).slaveAddress === slaveAddress)
+                return i
+        }
+        return -1
+    }
+
+
+    // Public method for the future RS485/UART backend.
+    function reportDiscoveredSlave(slaveAddress, deviceIdentifier) {
+        var address = parseInt(slaveAddress)
+
+        if (isNaN(address) || address < 1 || address > 32)
+            return
+
+        var identifier =
+            deviceIdentifier === undefined || deviceIdentifier === null
+            ? ""
+            : deviceIdentifier.toString()
+
+        var configured = findSlaveRow(address) >= 0
+        var row = findDiscoveredRow(address)
+
+        if (row < 0) {
+            discoveredSlaveModel.append({
+                "slaveAddress": address,
+                "deviceIdentifier": identifier,
+                "configured": configured
+            })
+        } else {
+            discoveredSlaveModel.setProperty(row, "deviceIdentifier", identifier)
+            discoveredSlaveModel.setProperty(row, "configured", configured)
+        }
+
+        if (configured)
+            updateSlaveDiagnostic(address, "online", identifier)
+
+        root.discoveryStatusText =
+            qsTr("یافت‌شده: ") + discoveredSlaveModel.count
+    }
+
+
+    function finishSlaveDiscovery() {
+        root.discoveryRunning = false
+
+        if (discoveredSlaveModel.count === 0) {
+            root.discoveryStatusText =
+                qsTr("هیچ Slave پاسخ‌گویی روی باس پیدا نشد")
+            return
+        }
+
+        var unconfiguredCount = 0
+
+        for (var i = 0; i < discoveredSlaveModel.count; i++) {
+            if (!discoveredSlaveModel.get(i).configured)
+                unconfiguredCount++
+        }
+
+        root.discoveryStatusText =
+            qsTr("یافت‌شده: ")
+            + discoveredSlaveModel.count
+            + qsTr("  •  تعیین‌تکلیف‌نشده: ")
+            + unconfiguredCount
+    }
+
+
+    function requestSlaveDiscovery() {
+        discoveredSlaveModel.clear()
+
+        root.discoveryRunning = true
+        root.discoveryStatusText =
+            qsTr("در حال جستجوی Slaveهای روی باس...")
+
+        if (developmentMode)
+            discoverySimulationTimer.restart()
+        else
+            root.slaveDiscoveryRequested()
+    }
+
+
+    Timer {
+        id: discoverySimulationTimer
+        interval: 550
+        repeat: false
+
+        onTriggered: {
+            root.reportDiscoveredSlave(1, "SIM-SLAVE-01")
+
+            var nextAddress = slaveConfigModel.count + 1
+
+            if (nextAddress <= 32) {
+                var suffix =
+                    nextAddress < 10
+                    ? "0" + nextAddress
+                    : nextAddress.toString()
+
+                root.reportDiscoveredSlave(
+                    nextAddress,
+                    "SIM-SLAVE-" + suffix
+                )
+            }
+
+            root.finishSlaveDiscovery()
         }
     }
 
@@ -1020,74 +1145,6 @@ Rectangle {
 
 
     // =========================================================
-    // HEADER
-    // =========================================================
-
-    Text {
-        id: pageTitle
-
-        anchors.top: parent.top
-        anchors.topMargin: 64
-
-        anchors.horizontalCenter:
-            parent.horizontalCenter
-
-        text:
-            qsTr("تنظیمات")
-
-        color: root.textColor
-
-        font.pixelSize: 27
-        font.bold: true
-    }
-
-
-    Button {
-        id: backButton
-
-        width: 135
-        height: 38
-
-        anchors.left: parent.left
-        anchors.leftMargin: 18
-
-        anchors.top: parent.top
-        anchors.topMargin: 70
-
-        text:
-            qsTr("بازگشت به منو")
-
-        onClicked:
-            root.backRequested()
-
-        background: Rectangle {
-            radius: 10
-
-            color:
-                backButton.pressed
-                ? "#3B4A61"
-                : "#253247"
-
-            border.width: 1
-            border.color: "#52637D"
-        }
-
-        contentItem: Text {
-            text: backButton.text
-            color: root.textColor
-            font.pixelSize: 14
-            font.bold: true
-
-            horizontalAlignment:
-                Text.AlignHCenter
-
-            verticalAlignment:
-                Text.AlignVCenter
-        }
-    }
-
-
-    // =========================================================
     // SIDE MENU
     // =========================================================
 
@@ -1097,7 +1154,7 @@ Rectangle {
         width: 180
 
         anchors.top: parent.top
-        anchors.topMargin: 125
+        anchors.topMargin: 56
 
         anchors.right: parent.right
         anchors.rightMargin: 18
@@ -1127,7 +1184,7 @@ Rectangle {
                 height: 58
 
                 text:
-                    qsTr("شبکه و TCP")
+                    qsTr("شبکه")
 
                 onClicked:
                     root.currentSection = "network"
@@ -1318,6 +1375,45 @@ Rectangle {
                         Text.AlignVCenter
                 }
             }
+
+
+            Button {
+                id: menuBackButton
+
+                width: parent.width
+                height: 48
+
+                text:
+                    qsTr("بازگشت به منو")
+
+                onClicked:
+                    root.backRequested()
+
+                background: Rectangle {
+                    radius: 10
+
+                    color:
+                        menuBackButton.pressed
+                        ? "#3B4A61"
+                        : "#253247"
+
+                    border.width: 1
+                    border.color: "#52637D"
+                }
+
+                contentItem: Text {
+                    text: menuBackButton.text
+                    color: root.textColor
+                    font.pixelSize: 13
+                    font.bold: true
+
+                    horizontalAlignment:
+                        Text.AlignHCenter
+
+                    verticalAlignment:
+                        Text.AlignVCenter
+                }
+            }
         }
     }
 
@@ -1336,7 +1432,7 @@ Rectangle {
         anchors.rightMargin: 12
 
         anchors.top: parent.top
-        anchors.topMargin: 125
+        anchors.topMargin: 56
 
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 18
@@ -1371,7 +1467,7 @@ Rectangle {
                     width: parent.width
 
                     text:
-                        qsTr("شبکه و TCP")
+                        qsTr("شبکه")
 
                     color: root.textColor
 
@@ -1379,74 +1475,49 @@ Rectangle {
                     font.bold: true
 
                     horizontalAlignment:
-                        Text.AlignRight
+                        Text.AlignHCenter
                 }
 
 
-                Row {
-                    width: parent.width
-                    spacing: 10
+                Rectangle {
+                    width: 400
+                    height: 48
 
+                    anchors.horizontalCenter:
+                        parent.horizontalCenter
 
-                    Rectangle {
-                        width: 245
-                        height: 48
+                    radius: 10
 
-                        radius: 10
+                    color: root.cardColor
 
-                        color: root.cardColor
+                    border.width: 1
+                    border.color: root.borderColor
 
-                        border.width: 1
-                        border.color: root.borderColor
+                    Text {
+                        anchors.centerIn: parent
 
-                        Text {
-                            anchors.centerIn: parent
+                        text:
+                            appState.ethernetConnected
+                            ? qsTr("Ethernet: متصل")
+                            : qsTr("Ethernet: قطع")
 
-                            text:
-                                appState.ethernetConnected
-                                ? qsTr("Ethernet: متصل")
-                                : qsTr("Ethernet: قطع")
+                        color:
+                            appState.ethernetConnected
+                            ? root.greenColor
+                            : root.redColor
 
-                            color:
-                                appState.ethernetConnected
-                                ? root.greenColor
-                                : root.redColor
-
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
-                    }
-
-
-                    Rectangle {
-                        width: 245
-                        height: 48
-
-                        radius: 10
-
-                        color: root.cardColor
-
-                        border.width: 1
-                        border.color: root.borderColor
-
-                        Text {
-                            anchors.centerIn: parent
-
-                            text:
-                                qsTr("TCP: در انتظار Backend")
-
-                            color: root.subTextColor
-
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
+                        font.pixelSize: 13
+                        font.bold: true
                     }
                 }
 
 
                 Row {
-                    width: parent.width
+                    width: 500
                     spacing: 10
+
+                    anchors.horizontalCenter:
+                        parent.horizontalCenter
 
 
                     Column {
@@ -1565,8 +1636,11 @@ Rectangle {
 
 
                 Row {
-                    width: parent.width
+                    width: 500
                     spacing: 10
+
+                    anchors.horizontalCenter:
+                        parent.horizontalCenter
 
 
                     Column {
@@ -1974,8 +2048,8 @@ Rectangle {
                                     spacing: 4
 
                                     model: [
-                                        "RS485",
-                                        "UART"
+                                        "Wired",
+                                        "Wireless"
                                     ]
 
 
@@ -2668,7 +2742,7 @@ Rectangle {
 
 
                 Row {
-                    width: parent.width
+                    width: 400
 
                     spacing: 10
 
@@ -2677,7 +2751,7 @@ Rectangle {
 
 
                     Rectangle {
-                        width: 245
+                        width: 195
                         height: 50
 
                         radius: 10
@@ -2712,7 +2786,7 @@ Rectangle {
 
 
                     Rectangle {
-                        width: 245
+                        width: 195
                         height: 50
 
                         radius: 10
@@ -3741,71 +3815,97 @@ Rectangle {
         visible:
             root.slaveConfigVisible
 
+        enabled:
+            visible
+
         z: 7000
 
         color: "#B3000000"
-
 
         MouseArea {
             anchors.fill: parent
         }
 
-
         Rectangle {
-            width: 748
-            height: 398
+            width: 720
+            height: 356
 
             anchors.centerIn: parent
 
-            radius: 18
-
+            radius: 16
             color: "#111C2F"
 
             border.width: 1
             border.color: "#40516A"
 
-
-            Text {
-                id: slaveConfigTitle
-
-                anchors.top: parent.top
-                anchors.topMargin: 13
-
-                anchors.horizontalCenter:
-                    parent.horizontalCenter
-
-                text:
-                    qsTr("پیکربندی Slaveها")
-
-                color: root.textColor
-
-                font.pixelSize: 19
-                font.bold: true
-
-                horizontalAlignment:
-                    Text.AlignHCenter
-            }
-
+            // -------------------------------------------------
+            // ACTIONS
+            // -------------------------------------------------
 
             Row {
                 id: slaveManagementRow
 
-                anchors.top:
-                    slaveConfigTitle.bottom
-
-                anchors.topMargin: 8
+                anchors.top: parent.top
+                anchors.topMargin: 12
 
                 anchors.horizontalCenter:
                     parent.horizontalCenter
 
-                spacing: 10
+                spacing: 8
 
+                Button {
+                    id: discoverSlavesButton
+
+                    width: 160
+                    height: 34
+
+                    enabled:
+                        !root.discoveryRunning
+
+                    text:
+                        root.discoveryRunning
+                        ? qsTr("در حال جستجو...")
+                        : qsTr("جستجوی Slaveها")
+
+                    onClicked:
+                        root.requestSlaveDiscovery()
+
+                    background: Rectangle {
+                        radius: 9
+
+                        color:
+                            discoverSlavesButton.pressed
+                            ? "#6D4A12"
+                            : "#4B3614"
+
+                        border.width: 1
+                        border.color: "#F59E0B"
+
+                        opacity:
+                            discoverSlavesButton.enabled
+                            ? 1.0
+                            : 0.55
+                    }
+
+                    contentItem: Text {
+                        text: discoverSlavesButton.text
+                        color: "#FBBF24"
+                        font.pixelSize: 11
+                        font.bold: true
+
+                        horizontalAlignment:
+                            Text.AlignHCenter
+
+                        verticalAlignment:
+                            Text.AlignVCenter
+                    }
+                }
 
                 Button {
                     id: addSlaveButton
 
-                    width: 155
-                    height: 36
+                    width: 150
+                    height: 34
 
                     text:
                         qsTr("+ افزودن Slave")
@@ -3815,7 +3915,6 @@ Rectangle {
 
                     onClicked:
                         root.addSlave()
-
 
                     background: Rectangle {
                         radius: 9
@@ -3834,14 +3933,10 @@ Rectangle {
                             : 0.35
                     }
 
-
                     contentItem: Text {
-                        text:
-                            addSlaveButton.text
-
+                        text: addSlaveButton.text
                         color: "#FFFFFF"
-
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                         font.bold: true
 
                         horizontalAlignment:
@@ -3852,12 +3947,11 @@ Rectangle {
                     }
                 }
 
-
                 Button {
                     id: removeSlaveButton
 
-                    width: 155
-                    height: 36
+                    width: 150
+                    height: 34
 
                     text:
                         qsTr("حذف آخرین Slave")
@@ -3867,7 +3961,6 @@ Rectangle {
 
                     onClicked:
                         root.removeLastSlave()
-
 
                     background: Rectangle {
                         radius: 9
@@ -3886,14 +3979,10 @@ Rectangle {
                             : 0.35
                     }
 
-
                     contentItem: Text {
-                        text:
-                            removeSlaveButton.text
-
+                        text: removeSlaveButton.text
                         color: "#FDA4AF"
-
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                         font.bold: true
 
                         horizontalAlignment:
@@ -3905,38 +3994,168 @@ Rectangle {
                 }
             }
 
+            // -------------------------------------------------
+            // DISCOVERED DEVICES
+            // -------------------------------------------------
 
             Rectangle {
-                id: slaveListPanel
+                id: discoveryPanel
 
-                width: 716
-                height: 246
+                width: 688
+                height: 66
 
                 anchors.top:
                     slaveManagementRow.bottom
 
-                anchors.topMargin: 9
+                anchors.topMargin: 7
 
                 anchors.horizontalCenter:
                     parent.horizontalCenter
 
-                radius: 12
+                radius: 10
+                color: "#0E1828"
 
+                border.width: 1
+                border.color: "#31435E"
+
+                Text {
+                    id: discoveryStatus
+
+                    anchors.top: parent.top
+                    anchors.topMargin: 5
+
+                    anchors.horizontalCenter:
+                        parent.horizontalCenter
+
+                    text:
+                        root.discoveryStatusText
+
+                    color: root.subTextColor
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+
+                ListView {
+                    id: discoveredSlaveList
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: discoveryStatus.bottom
+                    anchors.bottom: parent.bottom
+
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    anchors.topMargin: 3
+                    anchors.bottomMargin: 5
+
+                    orientation:
+                        ListView.Horizontal
+
+                    layoutDirection:
+                        Qt.RightToLeft
+
+                    spacing: 6
+                    clip: true
+
+                    boundsBehavior:
+                        Flickable.StopAtBounds
+
+                    model:
+                        discoveredSlaveModel
+
+                    delegate:
+                        Rectangle {
+                            width: 205
+                            height: 34
+                            radius: 8
+
+                            color:
+                                configured
+                                ? "#173527"
+                                : "#3A2C12"
+
+                            border.width: 1
+
+                            border.color:
+                                configured
+                                ? root.greenColor
+                                : "#F59E0B"
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                Text {
+                                    text:
+                                        qsTr("Slave ")
+                                        + slaveAddress
+
+                                    color: root.textColor
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    text:
+                                        deviceIdentifier.length > 0
+                                        ? deviceIdentifier
+                                        : qsTr("شناسه: —")
+
+                                    color: "#CBD5E1"
+                                    font.pixelSize: 9
+                                }
+
+                                Text {
+                                    text:
+                                        configured
+                                        ? qsTr("ثبت‌شده")
+                                        : qsTr("تعیین‌نشده")
+
+                                    color:
+                                        configured
+                                        ? "#86EFAC"
+                                        : "#FBBF24"
+
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+                            }
+                        }
+                }
+            }
+
+            // -------------------------------------------------
+            // CONFIGURED SLAVES
+            // -------------------------------------------------
+
+            Rectangle {
+                id: slaveListPanel
+
+                width: 688
+                height: 168
+
+                anchors.top:
+                    discoveryPanel.bottom
+
+                anchors.topMargin: 7
+
+                anchors.horizontalCenter:
+                    parent.horizontalCenter
+
+                radius: 10
                 color: "#0E1828"
 
                 border.width: 1
                 border.color: "#26364D"
 
-
                 ListView {
                     id: slaveConfigList
 
                     anchors.fill: parent
-                    anchors.margins: 7
+                    anchors.margins: 6
 
                     clip: true
-
-                    spacing: 7
+                    spacing: 6
 
                     boundsBehavior:
                         Flickable.StopAtBounds
@@ -3944,69 +4163,55 @@ Rectangle {
                     model:
                         slaveConfigModel
 
-
                     ScrollBar.vertical:
                         ScrollBar {
-
                             policy:
                                 ScrollBar.AsNeeded
                         }
 
-
                     delegate:
                         Rectangle {
-
                             width:
-                                slaveConfigList.width
-                                - 10
+                                slaveConfigList.width - 10
 
-                            height: 94
-
-                            radius: 11
+                            height: 90
+                            radius: 10
 
                             color: root.cardColor
 
                             border.width: 1
 
                             border.color:
-                                communicationState
-                                === "online"
+                                communicationState === "online"
                                 ? root.greenColor
                                 : (
-                                    communicationState
-                                    === "offline"
+                                    communicationState === "offline"
                                     ? root.redColor
                                     : root.borderColor
                                 )
 
-
                             Column {
                                 anchors.fill: parent
-                                anchors.margins: 8
-
-                                spacing: 5
-
+                                anchors.margins: 7
+                                spacing: 4
 
                                 Row {
                                     width: parent.width
-                                    height: 34
-
-                                    spacing: 8
-
+                                    height: 32
+                                    spacing: 7
 
                                     Text {
-                                        width: 112
+                                        width: 105
                                         height: parent.height
 
                                         text:
                                             qsTr("Slave ")
                                             + slaveAddress
-                                            + qsTr("  •  DIP ")
+                                            + qsTr(" • DIP ")
                                             + slaveAddress
 
                                         color: root.textColor
-
-                                        font.pixelSize: 12
+                                        font.pixelSize: 11
                                         font.bold: true
 
                                         horizontalAlignment:
@@ -4016,9 +4221,8 @@ Rectangle {
                                             Text.AlignVCenter
                                     }
 
-
                                     Text {
-                                        width: 100
+                                        width: 90
                                         height: parent.height
 
                                         text:
@@ -4031,7 +4235,7 @@ Rectangle {
                                                 communicationState
                                             )
 
-                                        font.pixelSize: 11
+                                        font.pixelSize: 10
                                         font.bold: true
 
                                         horizontalAlignment:
@@ -4041,21 +4245,18 @@ Rectangle {
                                             Text.AlignVCenter
                                     }
 
-
                                     Rectangle {
                                         width: 205
-                                        height: 32
+                                        height: 30
 
                                         anchors.verticalCenter:
                                             parent.verticalCenter
 
                                         radius: 8
-
                                         color: "#0E1828"
 
                                         border.width: 1
                                         border.color: root.borderColor
-
 
                                         Text {
                                             anchors.fill: parent
@@ -4065,14 +4266,14 @@ Rectangle {
                                             text:
                                                 deviceIdentifier.length > 0
                                                 ? deviceIdentifier
-                                                : qsTr("شناسه / MAC: —")
+                                                : qsTr("شناسه سخت‌افزاری / MAC: —")
 
                                             color:
                                                 deviceIdentifier.length > 0
                                                 ? "#CBD5E1"
                                                 : "#64748B"
 
-                                            font.pixelSize: 10
+                                            font.pixelSize: 9
 
                                             horizontalAlignment:
                                                 Text.AlignHCenter
@@ -4085,20 +4286,17 @@ Rectangle {
                                         }
                                     }
 
-
                                     Button {
                                         id: testSlaveButton
 
-                                        width: 122
-                                        height: 34
+                                        width: 118
+                                        height: 30
 
                                         enabled:
-                                            communicationState
-                                            !== "checking"
+                                            communicationState !== "checking"
 
                                         text:
-                                            communicationState
-                                            === "checking"
+                                            communicationState === "checking"
                                             ? qsTr("در حال بررسی...")
                                             : qsTr("بررسی ارتباط")
 
@@ -4108,9 +4306,8 @@ Rectangle {
                                                 slaveAddress
                                             )
 
-
                                         background: Rectangle {
-                                            radius: 9
+                                            radius: 8
 
                                             color:
                                                 testSlaveButton.pressed
@@ -4126,13 +4323,9 @@ Rectangle {
                                                 : 0.55
                                         }
 
-
                                         contentItem: Text {
-                                            text:
-                                                testSlaveButton.text
-
+                                            text: testSlaveButton.text
                                             color: "#FFFFFF"
-
                                             font.pixelSize: 10
                                             font.bold: true
 
@@ -4145,19 +4338,13 @@ Rectangle {
                                     }
                                 }
 
-
                                 Row {
                                     width: parent.width
-                                    height: 36
-
-                                    anchors.horizontalCenter:
-                                        parent.horizontalCenter
-
-                                    spacing: 10
-
+                                    height: 34
+                                    spacing: 8
 
                                     Text {
-                                        width: 170
+                                        width: 155
                                         height: parent.height
 
                                         text:
@@ -4170,7 +4357,7 @@ Rectangle {
                                             ? "#C4B5FD"
                                             : root.subTextColor
 
-                                        font.pixelSize: 11
+                                        font.pixelSize: 10
                                         font.bold: true
 
                                         horizontalAlignment:
@@ -4180,13 +4367,11 @@ Rectangle {
                                             Text.AlignVCenter
                                     }
 
-
                                     Button {
                                         id: minusChannelButton
 
-                                        width: 42
-                                        height: 34
-
+                                        width: 38
+                                        height: 32
                                         text: "−"
 
                                         enabled:
@@ -4198,15 +4383,9 @@ Rectangle {
                                                 -1
                                             )
 
-
                                         background: Rectangle {
-                                            radius: 9
-
-                                            color:
-                                                minusChannelButton.pressed
-                                                ? "#3B4A61"
-                                                : "#253247"
-
+                                            radius: 8
+                                            color: "#253247"
                                             border.width: 1
                                             border.color: root.borderColor
 
@@ -4216,93 +4395,9 @@ Rectangle {
                                                 : 0.35
                                         }
 
-
                                         contentItem: Text {
-                                            text:
-                                                minusChannelButton.text
-
+                                            text: minusChannelButton.text
                                             color: root.textColor
-
-                                            font.pixelSize: 20
-                                            font.bold: true
-
-                                            horizontalAlignment:
-                                                Text.AlignHCenter
-
-                                            verticalAlignment:
-                                                Text.AlignVCenter
-                                        }
-                                    }
-
-
-                                    Rectangle {
-                                        width: 58
-                                        height: 34
-
-                                        radius: 9
-
-                                        color: "#0E1828"
-
-                                        border.width: 1
-                                        border.color: root.accentColor
-
-
-                                        Text {
-                                            anchors.centerIn: parent
-
-                                            text:
-                                                activeChannels
-
-                                            color: root.textColor
-
-                                            font.pixelSize: 15
-                                            font.bold: true
-                                        }
-                                    }
-
-
-                                    Button {
-                                        id: plusChannelButton
-
-                                        width: 42
-                                        height: 34
-
-                                        text: "+"
-
-                                        enabled:
-                                            activeChannels < 12
-
-                                        onClicked:
-                                            root.changeActiveChannels(
-                                                index,
-                                                1
-                                            )
-
-
-                                        background: Rectangle {
-                                            radius: 9
-
-                                            color:
-                                                plusChannelButton.pressed
-                                                ? "#167DA5"
-                                                : "#0EA5E9"
-
-                                            border.width: 1
-                                            border.color: root.accentColor
-
-                                            opacity:
-                                                plusChannelButton.enabled
-                                                ? 1.0
-                                                : 0.35
-                                        }
-
-
-                                        contentItem: Text {
-                                            text:
-                                                plusChannelButton.text
-
-                                            color: "#FFFFFF"
-
                                             font.pixelSize: 18
                                             font.bold: true
 
@@ -4314,9 +4409,68 @@ Rectangle {
                                         }
                                     }
 
+                                    Rectangle {
+                                        width: 54
+                                        height: 32
+                                        radius: 8
+                                        color: "#0E1828"
+
+                                        border.width: 1
+                                        border.color: root.accentColor
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: activeChannels
+                                            color: root.textColor
+                                            font.pixelSize: 14
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Button {
+                                        id: plusChannelButton
+
+                                        width: 38
+                                        height: 32
+                                        text: "+"
+
+                                        enabled:
+                                            activeChannels < 12
+
+                                        onClicked:
+                                            root.changeActiveChannels(
+                                                index,
+                                                1
+                                            )
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: "#0EA5E9"
+                                            border.width: 1
+                                            border.color: root.accentColor
+
+                                            opacity:
+                                                plusChannelButton.enabled
+                                                ? 1.0
+                                                : 0.35
+                                        }
+
+                                        contentItem: Text {
+                                            text: plusChannelButton.text
+                                            color: "#FFFFFF"
+                                            font.pixelSize: 17
+                                            font.bold: true
+
+                                            horizontalAlignment:
+                                                Text.AlignHCenter
+
+                                            verticalAlignment:
+                                                Text.AlignVCenter
+                                        }
+                                    }
 
                                     Text {
-                                        width: 185
+                                        width: 170
                                         height: parent.height
 
                                         text:
@@ -4325,8 +4479,7 @@ Rectangle {
                                             + qsTr(" از 12")
 
                                         color: root.subTextColor
-
-                                        font.pixelSize: 10
+                                        font.pixelSize: 9
 
                                         horizontalAlignment:
                                             Text.AlignHCenter
@@ -4340,64 +4493,56 @@ Rectangle {
                 }
             }
 
+            // -------------------------------------------------
+            // SUMMARY / CLOSE
+            // -------------------------------------------------
 
             Row {
                 anchors.top:
                     slaveListPanel.bottom
 
-                anchors.topMargin: 8
+                anchors.topMargin: 6
 
                 anchors.horizontalCenter:
                     parent.horizontalCenter
 
-                spacing: 18
-
+                spacing: 16
 
                 Text {
-                    height: 40
+                    height: 38
 
                     text:
-                        qsTr("Slaveها: ")
+                        qsTr("Slaveهای تنظیم‌شده: ")
                         + slaveConfigModel.count
 
                     color: root.subTextColor
-
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: true
 
                     verticalAlignment:
                         Text.AlignVCenter
-
-                    horizontalAlignment:
-                        Text.AlignHCenter
                 }
 
-
                 Text {
-                    height: 40
+                    height: 38
 
                     text:
                         qsTr("تعداد کل کمدها: ")
                         + root.totalLockerCount
 
                     color: "#C4B5FD"
-
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: true
 
                     verticalAlignment:
                         Text.AlignVCenter
-
-                    horizontalAlignment:
-                        Text.AlignHCenter
                 }
-
 
                 Button {
                     id: closeSlaveConfigButton
 
-                    width: 135
-                    height: 40
+                    width: 130
+                    height: 36
 
                     text:
                         qsTr("تأیید و بستن")
@@ -4405,9 +4550,8 @@ Rectangle {
                     onClicked:
                         root.applyLockerConfiguration()
 
-
                     background: Rectangle {
-                        radius: 10
+                        radius: 9
 
                         color:
                             closeSlaveConfigButton.pressed
@@ -4418,14 +4562,10 @@ Rectangle {
                         border.color: root.accentColor
                     }
 
-
                     contentItem: Text {
-                        text:
-                            closeSlaveConfigButton.text
-
+                        text: closeSlaveConfigButton.text
                         color: "#FFFFFF"
-
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                         font.bold: true
 
                         horizontalAlignment:

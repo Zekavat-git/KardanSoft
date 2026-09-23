@@ -226,6 +226,13 @@ ApplicationWindow {
                     target
                 )
             }
+
+            onLockerStatusRequested: {
+
+                root.setCurrentPage(
+                    "locker_status"
+                )
+            }
         }
 
 
@@ -259,6 +266,27 @@ ApplicationWindow {
 
             visible:
                 root.currentPage === "open_locker"
+
+            enabled:
+                visible
+
+            z:
+                visible ? 10 : 0
+
+            onBackRequested: {
+
+                root.backToMenu()
+            }
+        }
+
+
+        Pages.LockerStatusPage {
+            id: lockerStatusPage
+
+            anchors.fill: parent
+
+            visible:
+                root.currentPage === "locker_status"
 
             enabled:
                 visible
@@ -357,6 +385,11 @@ ApplicationWindow {
                 root.currentPage !== "idle"
                 &&
                 !globalStatusBar.warningVisible
+                &&
+                !(
+                    root.currentPage === "settings"
+                    && settingsPage.slaveConfigVisible
+                )
 
             z: 2500
 
