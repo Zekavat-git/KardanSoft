@@ -19,7 +19,19 @@ Rectangle {
     // STATUS HELPERS
     // =========================================================
 
-    function statusText(
+    function occupancyText(
+        occupancyState
+    ) {
+
+        return (
+            occupancyState === "occupied"
+            ? qsTr("پر")
+            : qsTr("آزاد")
+        )
+    }
+
+
+    function physicalText(
         actualState,
         expectedState,
         fault
@@ -46,11 +58,33 @@ Rectangle {
         if (expectedState === "open")
             return qsTr("در حال باز شدن")
 
-        return qsTr("بسته / آماده")
+        return qsTr("بسته")
+    }
+
+
+    function combinedStatusText(
+        occupancyState,
+        actualState,
+        expectedState,
+        fault
+    ) {
+
+        return (
+            occupancyText(
+                occupancyState
+            )
+            + qsTr(" • ")
+            + physicalText(
+                actualState,
+                expectedState,
+                fault
+            )
+        )
     }
 
 
     function cardColor(
+        occupancyState,
         actualState,
         expectedState,
         fault
@@ -68,11 +102,15 @@ Rectangle {
         if (expectedState === "open")
             return "#13384A"
 
+        if (occupancyState === "occupied")
+            return "#261D45"
+
         return "#153526"
     }
 
 
     function borderColor(
+        occupancyState,
         actualState,
         expectedState,
         fault
@@ -90,11 +128,15 @@ Rectangle {
         if (expectedState === "open")
             return "#38BDF8"
 
+        if (occupancyState === "occupied")
+            return "#8B5CF6"
+
         return "#22C55E"
     }
 
 
     function statusColor(
+        occupancyState,
         actualState,
         expectedState,
         fault
@@ -112,6 +154,9 @@ Rectangle {
         if (expectedState === "open")
             return "#7DD3FC"
 
+        if (occupancyState === "occupied")
+            return "#C4B5FD"
+
         return "#86EFAC"
     }
 
@@ -124,7 +169,7 @@ Rectangle {
         id: titleText
 
         anchors.top: parent.top
-        anchors.topMargin: 68
+        anchors.topMargin: 63
 
         anchors.horizontalCenter:
             parent.horizontalCenter
@@ -134,7 +179,7 @@ Rectangle {
 
         color: "#F8FAFC"
 
-        font.pixelSize: 27
+        font.pixelSize: 25
         font.bold: true
     }
 
@@ -145,17 +190,19 @@ Rectangle {
         anchors.top:
             titleText.bottom
 
-        anchors.topMargin: 2
+        anchors.topMargin: 0
 
         anchors.horizontalCenter:
             parent.horizontalCenter
 
         text:
-            qsTr("وضعیت لحظه‌ای کمدها و خطاهای سخت‌افزاری")
+            qsTr(
+                "وضعیت تخصیص، درب و خطاهای کمدها"
+            )
 
         color: "#94A3B8"
 
-        font.pixelSize: 14
+        font.pixelSize: 12
     }
 
 
@@ -222,6 +269,175 @@ Rectangle {
 
 
     // =========================================================
+    // LIVE SUMMARY
+    // =========================================================
+
+    Row {
+        id: summaryRow
+
+        anchors.top:
+            subtitleText.bottom
+
+        anchors.topMargin: 8
+
+        anchors.horizontalCenter:
+            parent.horizontalCenter
+
+        spacing: 7
+
+
+        Rectangle {
+            width: 122
+            height: 46
+            radius: 11
+            color: "#122A22"
+            border.width: 1
+            border.color: "#22C55E"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text:
+                        lockerModel.freeCount
+
+                    color: "#86EFAC"
+                    font.pixelSize: 21
+                    font.bold: true
+                }
+
+                Text {
+                    text: qsTr("آزاد")
+                    color: "#CBD5E1"
+                    font.pixelSize: 12
+                }
+            }
+        }
+
+
+        Rectangle {
+            width: 122
+            height: 46
+            radius: 11
+            color: "#261D45"
+            border.width: 1
+            border.color: "#8B5CF6"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text:
+                        lockerModel.occupiedCount
+
+                    color: "#C4B5FD"
+                    font.pixelSize: 21
+                    font.bold: true
+                }
+
+                Text {
+                    text: qsTr("پر")
+                    color: "#CBD5E1"
+                    font.pixelSize: 12
+                }
+            }
+        }
+
+
+        Rectangle {
+            width: 122
+            height: 46
+            radius: 11
+            color: "#302513"
+            border.width: 1
+            border.color: "#F59E0B"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text:
+                        lockerModel.openCount
+
+                    color: "#FBBF24"
+                    font.pixelSize: 21
+                    font.bold: true
+                }
+
+                Text {
+                    text: qsTr("باز")
+                    color: "#CBD5E1"
+                    font.pixelSize: 12
+                }
+            }
+        }
+
+
+        Rectangle {
+            width: 122
+            height: 46
+            radius: 11
+            color: "#351B22"
+            border.width: 1
+            border.color: "#EF4444"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text:
+                        lockerModel.faultCount
+
+                    color: "#F87171"
+                    font.pixelSize: 21
+                    font.bold: true
+                }
+
+                Text {
+                    text: qsTr("خطا")
+                    color: "#CBD5E1"
+                    font.pixelSize: 12
+                }
+            }
+        }
+
+
+        Rectangle {
+            width: 122
+            height: 46
+            radius: 11
+            color: "#1B2535"
+            border.width: 1
+            border.color: "#64748B"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text:
+                        lockerModel.unknownCount
+
+                    color: "#CBD5E1"
+                    font.pixelSize: 21
+                    font.bold: true
+                }
+
+                Text {
+                    text: qsTr("نامشخص")
+                    color: "#CBD5E1"
+                    font.pixelSize: 11
+                }
+            }
+        }
+    }
+
+
+    // =========================================================
     // LOCKER GRID
     // =========================================================
 
@@ -229,12 +445,15 @@ Rectangle {
         id: gridContainer
 
         width: 680
-        height: 254
+        height:
+            developmentMode
+            ? 181
+            : 210
 
         anchors.top:
-            subtitleText.bottom
+            summaryRow.bottom
 
-        anchors.topMargin: 14
+        anchors.topMargin: 8
 
         anchors.horizontalCenter:
             parent.horizontalCenter
@@ -251,14 +470,14 @@ Rectangle {
             id: lockerGrid
 
             anchors.fill: parent
-            anchors.margins: 10
+            anchors.margins: 7
 
             clip: true
 
             model: lockerModel
 
             cellWidth: 160
-            cellHeight: 78
+            cellHeight: 58
 
             boundsBehavior:
                 Flickable.StopAtBounds
@@ -282,18 +501,17 @@ Rectangle {
 
 
                 Rectangle {
-                    id: lockerCard
-
                     width: 148
-                    height: 68
+                    height: 52
 
                     anchors.centerIn:
                         parent
 
-                    radius: 13
+                    radius: 11
 
                     color:
                         root.cardColor(
+                            occupancyState,
                             actualState,
                             expectedState,
                             fault
@@ -303,6 +521,7 @@ Rectangle {
 
                     border.color:
                         root.borderColor(
+                            occupancyState,
                             actualState,
                             expectedState,
                             fault
@@ -315,7 +534,7 @@ Rectangle {
 
                         width: 132
 
-                        spacing: 1
+                        spacing: 0
 
 
                         Text {
@@ -327,7 +546,7 @@ Rectangle {
 
                             color: "#F8FAFC"
 
-                            font.pixelSize: 18
+                            font.pixelSize: 15
                             font.bold: true
 
                             horizontalAlignment:
@@ -339,7 +558,8 @@ Rectangle {
                             width: parent.width
 
                             text:
-                                root.statusText(
+                                root.combinedStatusText(
+                                    occupancyState,
                                     actualState,
                                     expectedState,
                                     fault
@@ -347,14 +567,17 @@ Rectangle {
 
                             color:
                                 root.statusColor(
+                                    occupancyState,
                                     actualState,
                                     expectedState,
                                     fault
                                 )
 
-                            font.pixelSize: 12
+                            font.pixelSize: 10
                             font.bold:
                                 fault !== "none"
+                                ||
+                                occupancyState === "occupied"
 
                             horizontalAlignment:
                                 Text.AlignHCenter
@@ -365,14 +588,22 @@ Rectangle {
                             width: parent.width
 
                             text:
-                                qsTr("برد ")
-                                + slaveAddress
-                                + qsTr("  •  کانال ")
-                                + channel
+                                occupancyState === "occupied"
+                                && assignedTo.length > 0
+                                ? assignedTo
+                                : (
+                                    qsTr("برد ")
+                                    + slaveAddress
+                                    + qsTr("  •  کانال ")
+                                    + channel
+                                )
 
                             color: "#64748B"
 
-                            font.pixelSize: 10
+                            font.pixelSize: 9
+
+                            elide:
+                                Text.ElideRight
 
                             horizontalAlignment:
                                 Text.AlignHCenter
@@ -385,98 +616,24 @@ Rectangle {
 
 
     // =========================================================
-    // LEGEND
+    // FOOTER
     // =========================================================
 
-    Row {
+    Text {
         anchors.top:
             gridContainer.bottom
 
-        anchors.topMargin: 8
+        anchors.topMargin: 6
 
         anchors.horizontalCenter:
             parent.horizontalCenter
 
-        spacing: 20
+        text:
+            qsTr("تعداد کل کمدها: ")
+            + lockerModel.totalCount
 
+        color: "#64748B"
 
-        Row {
-            spacing: 6
-
-            Rectangle {
-                width: 10
-                height: 10
-                radius: 5
-                color: "#22C55E"
-                anchors.verticalCenter:
-                    parent.verticalCenter
-            }
-
-            Text {
-                text: qsTr("آماده")
-                color: "#94A3B8"
-                font.pixelSize: 11
-            }
-        }
-
-
-        Row {
-            spacing: 6
-
-            Rectangle {
-                width: 10
-                height: 10
-                radius: 5
-                color: "#F59E0B"
-                anchors.verticalCenter:
-                    parent.verticalCenter
-            }
-
-            Text {
-                text: qsTr("باز")
-                color: "#94A3B8"
-                font.pixelSize: 11
-            }
-        }
-
-
-        Row {
-            spacing: 6
-
-            Rectangle {
-                width: 10
-                height: 10
-                radius: 5
-                color: "#38BDF8"
-                anchors.verticalCenter:
-                    parent.verticalCenter
-            }
-
-            Text {
-                text: qsTr("در حال باز شدن")
-                color: "#94A3B8"
-                font.pixelSize: 11
-            }
-        }
-
-
-        Row {
-            spacing: 6
-
-            Rectangle {
-                width: 10
-                height: 10
-                radius: 5
-                color: "#EF4444"
-                anchors.verticalCenter:
-                    parent.verticalCenter
-            }
-
-            Text {
-                text: qsTr("خطا")
-                color: "#94A3B8"
-                font.pixelSize: 11
-            }
-        }
+        font.pixelSize: 11
     }
 }
