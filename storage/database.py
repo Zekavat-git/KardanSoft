@@ -7,6 +7,8 @@ class LockerDatabase:
     """
     Small SQLite persistence layer for locker assignment state.
 
+    assigned_to stores the person's unique ID.
+
     Physical door state and faults are intentionally NOT persisted.
     After a real device reboot they must come from fresh hardware feedback.
     """
@@ -60,6 +62,18 @@ class LockerDatabase:
         assigned_to: Optional[str] = None
     ):
 
+        if assigned_to is not None:
+
+            assigned_to = str(
+                assigned_to
+            ).strip()
+
+            if not assigned_to:
+
+                raise ValueError(
+                    "assigned_to must not be empty."
+                )
+
         self._connection.execute(
             """
             INSERT INTO locker_assignments (
@@ -79,9 +93,7 @@ class LockerDatabase:
             """,
             (
                 int(locker_id),
-                assigned_to
-                if assigned_to
-                else None,
+                assigned_to,
             )
         )
 
@@ -92,7 +104,7 @@ class LockerDatabase:
         locker_id: int
     ):
 
-        self._connection.execute(
+        cursor = self._connection.execute(
             """
             DELETE FROM locker_assignments
             WHERE locker_id = ?
@@ -103,6 +115,8 @@ class LockerDatabase:
         )
 
         self._connection.commit()
+
+        return cursor.rowcount > 0
 
     # =========================================================
     # QUERY
@@ -167,6 +181,65 @@ class LockerDatabase:
             }
             for row in rows
         ]
+
+    def find_by_assigned_to(
+        self,
+        assigned_to: str
+    ):
+
+        assigned_to = str(
+            assigned_to
+        ).strip()
+
+        if not assigned_to:
+            return None
+
+        row = self._connection.execute(
+            """
+            SELECT
+                locker_id,
+                assigned_to,
+                assigned_at
+            FROM locker_assignments
+            WHERE assigned_to = ?
+            LIMIT 1
+            """,
+            (
+                assigned_to,
+            )
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "locker_id":
+                int(row["locker_id"]),
+
+            "assigned_to":
+                row["assigned_to"],
+
+            "assigned_at":
+                row["assigned_at"],
+        }
+
+    def assignment_matches(
+        self,
+        locker_id: int,
+        assigned_to: str
+    ) -> bool:
+
+        assignment = self.get_assignment(
+            locker_id
+        )
+
+        if assignment is None:
+            return False
+
+        return (
+            assignment["assigned_to"]
+            == str(assigned_to).strip()
+        )
 
     # =========================================================
     # LIFECYCLE

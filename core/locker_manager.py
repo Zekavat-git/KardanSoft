@@ -487,6 +487,241 @@ class LockerManager(QObject):
         )
 
     # =========================================================
+    # TCP / EXTERNAL BUSINESS OPERATIONS
+    # =========================================================
+
+    def allocate_to_person(
+        self,
+        locker_id: int,
+        person_id: str
+    ):
+        """
+        Strict assignment operation intended for TCP/external commands.
+
+        Returns:
+            (success: bool, result_code: str)
+        """
+
+        person_id = str(
+            person_id
+        ).strip()
+
+        if not person_id:
+
+            return (
+                False,
+                "invalid_person_id"
+            )
+
+        locker = self.get_locker(
+            locker_id
+        )
+
+        if locker is None:
+
+            return (
+                False,
+                "locker_not_found"
+            )
+
+        # -----------------------------------------------------
+        # LOCKER ALREADY OCCUPIED
+        # -----------------------------------------------------
+
+        if (
+            locker.occupancy_state
+            == OccupancyState.OCCUPIED
+        ):
+
+            # Treat an exact repeat as an idempotent success.
+            if locker.assigned_to == person_id:
+
+                return (
+                    True,
+                    "already_allocated"
+                )
+
+            return (
+                False,
+                "locker_already_allocated"
+            )
+
+        # -----------------------------------------------------
+        # PERSON ALREADY HAS ANOTHER LOCKER
+        # -----------------------------------------------------
+
+        if self._database is not None:
+
+            existing = (
+                self._database.find_by_assigned_to(
+                    person_id
+                )
+            )
+
+            if existing is not None:
+
+                if (
+                    int(existing["locker_id"])
+                    != locker.locker_id
+                ):
+
+                    return (
+                        False,
+                        "person_already_allocated"
+                    )
+
+        # -----------------------------------------------------
+        # WRITE ASSIGNMENT
+        # -----------------------------------------------------
+
+        if self._database is not None:
+
+            self._database.assign_locker(
+                locker.locker_id,
+                person_id
+            )
+
+            assignment = (
+                self._database.get_assignment(
+                    locker.locker_id
+                )
+            )
+
+        else:
+
+            assignment = {
+                "assigned_to":
+                    person_id,
+
+                "assigned_at":
+                    None,
+            }
+
+        locker.occupancy_state = (
+            OccupancyState.OCCUPIED
+        )
+
+        locker.assigned_to = (
+            assignment["assigned_to"]
+        )
+
+        locker.assigned_at = (
+            assignment["assigned_at"]
+        )
+
+        self.lockerChanged.emit(
+            locker.locker_id
+        )
+
+        print(
+            "TCP BUSINESS | ALLOCATE | "
+            f"Locker={locker.locker_id} | "
+            f"Person={person_id} | "
+            "Result=allocated"
+        )
+
+        return (
+            True,
+            "allocated"
+        )
+
+
+    def release_from_person(
+        self,
+        locker_id: int,
+        person_id: str
+    ):
+        """
+        Strict release operation intended for TCP/external commands.
+
+        The received person_id must match the assignment.
+
+        Returns:
+            (success: bool, result_code: str)
+        """
+
+        person_id = str(
+            person_id
+        ).strip()
+
+        if not person_id:
+
+            return (
+                False,
+                "invalid_person_id"
+            )
+
+        locker = self.get_locker(
+            locker_id
+        )
+
+        if locker is None:
+
+            return (
+                False,
+                "locker_not_found"
+            )
+
+        # Repeated RELEASE of an already-free locker is harmless.
+        if (
+            locker.occupancy_state
+            == OccupancyState.FREE
+        ):
+
+            return (
+                True,
+                "already_free"
+            )
+
+        # Never release another person's locker.
+        if locker.assigned_to != person_id:
+
+            return (
+                False,
+                "assignment_mismatch"
+            )
+
+        if self._database is not None:
+
+            if not self._database.assignment_matches(
+                locker.locker_id,
+                person_id
+            ):
+
+                return (
+                    False,
+                    "assignment_mismatch"
+                )
+
+            self._database.release_locker(
+                locker.locker_id
+            )
+
+        locker.occupancy_state = (
+            OccupancyState.FREE
+        )
+
+        locker.assigned_to = None
+        locker.assigned_at = None
+
+        self.lockerChanged.emit(
+            locker.locker_id
+        )
+
+        print(
+            "TCP BUSINESS | RELEASE | "
+            f"Locker={locker.locker_id} | "
+            f"Person={person_id} | "
+            "Result=released"
+        )
+
+        return (
+            True,
+            "released"
+        )
+
+
+    # =========================================================
     # OPEN COMMAND
     # =========================================================
 

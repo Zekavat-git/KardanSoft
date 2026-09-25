@@ -1,5 +1,21 @@
+import os
 import sys
 from pathlib import Path
+
+# ============================================================
+# NANOPI DISPLAY CONFIGURATION
+# Must be defined before QApplication is created.
+# ============================================================
+
+os.environ.setdefault(
+    "QT_QPA_PLATFORM",
+    "linuxfb:fb=/dev/fb0"
+)
+
+os.environ.setdefault(
+    "QT_QUICK_BACKEND",
+    "software"
+)
 
 from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QFont, QFontDatabase
@@ -17,53 +33,91 @@ from locker_controller import LockerController
 from storage.database import LockerDatabase
 
 
-# NanoPi production GUI mode:
-# - Full-screen 800x480 through Main.qml
-# - No SimulatorWindow
-# - No Simulator object
-# - No SimulatorTransport / fake locker feedback
+# ============================================================
+# NANOPI PRODUCTION MODE
+# ============================================================
+
 DEVELOPMENT_MODE = False
-REQUIRED_FONT_FAMILY = "B Nazanin"
+
+PREFERRED_FONT_FAMILY = "B Nazanin"
+FALLBACK_FONT_FAMILY = "Noto Sans"
+
+
+def select_application_font(app):
+    available_families = set(QFontDatabase().families())
+
+    if PREFERRED_FONT_FAMILY in available_families:
+        selected_font = PREFERRED_FONT_FAMILY
+        print(
+            f"FONT | OK | {PREFERRED_FONT_FAMILY}"
+        )
+
+    elif FALLBACK_FONT_FAMILY in available_families:
+        selected_font = FALLBACK_FONT_FAMILY
+        print(
+            "FONT | WARNING | "
+            "B Nazanin is not installed."
+        )
+        print(
+            f"FONT | TEMPORARY FALLBACK | {selected_font}"
+        )
+
+    else:
+        selected_font = app.font().family()
+        print(
+            "FONT | WARNING | "
+            "Neither B Nazanin nor Noto Sans was found."
+        )
+        print(
+            f"FONT | SYSTEM FALLBACK | {selected_font}"
+        )
+
+    app.setFont(QFont(selected_font))
+
+    return selected_font
 
 
 def main():
+    print(
+        "DISPLAY | "
+        f"{os.environ.get('QT_QPA_PLATFORM')}"
+    )
+    print(
+        "QT QUICK BACKEND | "
+        f"{os.environ.get('QT_QUICK_BACKEND')}"
+    )
+
     app = QApplication(sys.argv)
 
     # --------------------------------------------------------
-    # FONT CHECK
+    # FONT
     # --------------------------------------------------------
-    available_families = set(QFontDatabase().families())
 
-    if REQUIRED_FONT_FAMILY not in available_families:
-        print(
-            "FONT ERROR | Required font is not installed: "
-            f"{REQUIRED_FONT_FAMILY}"
-        )
-        print(
-            "Install B Nazanin on Linux, run fc-cache -f, then "
-            "verify with: fc-match 'B Nazanin'"
-        )
-        return 2
+    selected_font = select_application_font(app)
 
-    app.setFont(QFont(REQUIRED_FONT_FAMILY))
-    print(f"FONT | OK | {REQUIRED_FONT_FAMILY}")
+    # --------------------------------------------------------
+    # QML ENGINE
+    # --------------------------------------------------------
 
     engine = QQmlApplicationEngine()
 
     # --------------------------------------------------------
     # BASIC APPLICATION OBJECTS
     # --------------------------------------------------------
+
     backend = Backend()
     app_state = AppState()
 
     # --------------------------------------------------------
     # AUTHENTICATION
     # --------------------------------------------------------
+
     auth_manager = AuthManager()
 
     # --------------------------------------------------------
     # SQLITE DATABASE
     # --------------------------------------------------------
+
     base_dir = Path(__file__).resolve().parent
 
     database = LockerDatabase(
@@ -73,12 +127,24 @@ def main():
     # --------------------------------------------------------
     # LOCKER CORE
     # --------------------------------------------------------
-    locker_manager = LockerManager(database=database)
-    locker_controller = LockerController(locker_manager)
 
-    # Until the real Wired/Wireless hardware transport is connected,
-    # create the default logical locker structure only. Physical state
-    # stays UNKNOWN because no simulated feedback is injected.
+    locker_manager = LockerManager(
+        database=database
+    )
+
+    locker_controller = LockerController(
+        locker_manager
+    )
+
+    # Real hardware transport has not yet been attached.
+    # Therefore:
+    #
+    # - No Simulator
+    # - No SimulatorTransport
+    # - No fake physical feedback
+    #
+    # We create only the logical locker structure.
+
     for locker_id in range(1, 13):
         locker_manager.add_locker(
             locker_id=locker_id,
@@ -86,41 +152,130 @@ def main():
             channel=locker_id,
         )
 
-    locker_model = LockerListModel(locker_manager)
+    locker_model = LockerListModel(
+        locker_manager
+    )
 
     # --------------------------------------------------------
     # QML CONTEXT
     # --------------------------------------------------------
+
     context = engine.rootContext()
 
-    context.setContextProperty("developmentMode", DEVELOPMENT_MODE)
-    context.setContextProperty("backend", backend)
-    context.setContextProperty("appState", app_state)
-    context.setContextProperty("authManager", auth_manager)
-    context.setContextProperty("lockerManager", locker_manager)
-    context.setContextProperty("lockerController", locker_controller)
-    context.setContextProperty("lockerModel", locker_model)
+    context.setContextProperty(
+        "developmentMode",
+        DEVELOPMENT_MODE
+    )
+
+    context.setContextProperty(
+        "backend",
+        backend
+    )
+
+    context.setContextProperty(
+        "appState",
+        app_state
+    )
+
+    context.setContextProperty(
+        "authManager",
+        auth_manager
+    )
+
+    context.setContextProperty(
+        "lockerManager",
+        locker_manager
+    )
+
+    context.setContextProperty(
+        "lockerController",
+        locker_controller
+    )
+
+    context.setContextProperty(
+        "lockerModel",
+        locker_model
+    )
+
+    context.setContextProperty(
+        "applicationFontFamily",
+        selected_font
+    )
 
     # --------------------------------------------------------
-    # LOAD MAIN GUI ONLY
+    # LOAD MAIN GUI
     # --------------------------------------------------------
-    main_qml = base_dir / "gui" / "Main.qml"
 
-    print("QML LOAD | MAIN | START")
-    engine.load(QUrl.fromLocalFile(str(main_qml)))
-    print("QML LOAD | MAIN | DONE")
+    main_qml = (
+        base_dir
+        / "gui"
+        / "Main.qml"
+    )
+
+    print(
+        f"QML LOAD | {main_qml}"
+    )
+
+    engine.load(
+        QUrl.fromLocalFile(
+            str(main_qml)
+        )
+    )
 
     if not engine.rootObjects():
-        print("ERROR: Main.qml could not be loaded.")
-        database.close()
-        return -1
+        print(
+            "ERROR | Main.qml could not be loaded."
+        )
 
-    print("MODE | NANOPI PRODUCTION GUI | NO SIMULATOR")
-    print("QT EVENT LOOP | START")
+        database.close()
+
+        return 1
+
+    root = engine.rootObjects()[0]
+
+    # Main.qml is designed for 800x480.
+    # Ensure that the top-level window is visible.
+    try:
+        root.setProperty(
+            "width",
+            800
+        )
+
+        root.setProperty(
+            "height",
+            480
+        )
+
+        root.setProperty(
+            "visible",
+            True
+        )
+
+    except Exception as exc:
+        print(
+            f"WINDOW | WARNING | {exc}"
+        )
+
+    print(
+        "MODE | NANOPI PRODUCTION GUI"
+    )
+
+    print(
+        "SIMULATOR | DISABLED"
+    )
+
+    print(
+        "FRAMEBUFFER | /dev/fb0 | 800x480"
+    )
+
+    print(
+        "QT EVENT LOOP | START"
+    )
 
     exit_code = app.exec_()
 
     database.close()
+
     return exit_code
 
 
