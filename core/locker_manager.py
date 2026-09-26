@@ -745,34 +745,6 @@ class LockerManager(QObject):
 
             return False
 
-        if (
-            locker.actual_state
-            == LockerState.OPEN
-        ):
-
-            reason = "already_open"
-
-            self.commandRejected.emit(
-                locker.locker_id,
-                reason
-            )
-
-            return False
-
-        if (
-            locker.expected_state
-            == ExpectedState.OPEN
-        ):
-
-            reason = "open_already_requested"
-
-            self.commandRejected.emit(
-                locker.locker_id,
-                reason
-            )
-
-            return False
-
         locker.expected_state = (
             ExpectedState.OPEN
         )

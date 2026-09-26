@@ -96,14 +96,14 @@ Rectangle {
         if (actualState === "open")
             return "#3A2C12"
 
-        if (actualState === "unknown")
-            return "#1E293B"
-
         if (expectedState === "open")
             return "#13384A"
 
         if (occupancyState === "occupied")
             return "#261D45"
+
+        if (actualState === "unknown")
+            return "#1E293B"
 
         return "#153526"
     }
@@ -122,14 +122,14 @@ Rectangle {
         if (actualState === "open")
             return "#F59E0B"
 
-        if (actualState === "unknown")
-            return "#64748B"
-
         if (expectedState === "open")
             return "#38BDF8"
 
         if (occupancyState === "occupied")
             return "#8B5CF6"
+
+        if (actualState === "unknown")
+            return "#64748B"
 
         return "#22C55E"
     }
@@ -148,14 +148,14 @@ Rectangle {
         if (actualState === "open")
             return "#FBBF24"
 
-        if (actualState === "unknown")
-            return "#94A3B8"
-
         if (expectedState === "open")
             return "#7DD3FC"
 
         if (occupancyState === "occupied")
             return "#C4B5FD"
+
+        if (actualState === "unknown")
+            return "#94A3B8"
 
         return "#86EFAC"
     }

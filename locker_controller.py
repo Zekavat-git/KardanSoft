@@ -58,6 +58,11 @@ class LockerController(QObject):
 
         self._active_locker_id = None
 
+        # Every executed OPEN operation receives a unique serial.
+        # Async callbacks use it to reject stale events.
+        self._open_command_serial = 0
+        self._active_command_serial = None
+
         self._batch_busy = False
 
         # -----------------------------------------------------
@@ -109,19 +114,11 @@ class LockerController(QObject):
         locker
     ):
 
+        # Every explicit OPEN request represents a new
+        # actuator command. Existing physical/expected state
+        # must not suppress another request.
         return (
-            locker.actual_state
-            == LockerState.CLOSED
-
-            and
-
-            locker.expected_state
-            == ExpectedState.CLOSED
-
-            and
-
-            locker.fault
-            == LockerFault.NONE
+            locker is not None
         )
 
     # =========================================================
@@ -200,16 +197,6 @@ class LockerController(QObject):
 
             if not self._locker_ready_for_open(
                 locker
-            ):
-                continue
-
-            # Don't add duplicate queue item
-            if locker_id in self._open_queue:
-                continue
-
-            if (
-                self._active_locker_id
-                == locker_id
             ):
                 continue
 
@@ -295,9 +282,19 @@ class LockerController(QObject):
 
             return
 
-        # Mark as active before sending command
+        # Mark as active before sending command.
         self._active_locker_id = (
             locker_id
+        )
+
+        self._open_command_serial += 1
+
+        command_serial = (
+            self._open_command_serial
+        )
+
+        self._active_command_serial = (
+            command_serial
         )
 
         result = (
@@ -309,6 +306,7 @@ class LockerController(QObject):
         if not result:
 
             self._active_locker_id = None
+            self._active_command_serial = None
 
             QTimer.singleShot(
                 0,
@@ -324,9 +322,11 @@ class LockerController(QObject):
         # Automatic OPEN timeout
         QTimer.singleShot(
             self.open_timeout_ms,
-            lambda locker_id=locker_id:
+            lambda locker_id=locker_id,
+            command_serial=command_serial:
             self._check_open_timeout(
-                locker_id
+                locker_id,
+                command_serial
             )
         )
 
@@ -336,8 +336,21 @@ class LockerController(QObject):
 
     def _check_open_timeout(
         self,
-        locker_id: int
+        locker_id: int,
+        command_serial: int
     ):
+
+        if (
+            self._active_locker_id
+            != locker_id
+        ):
+            return
+
+        if (
+            self._active_command_serial
+            != command_serial
+        ):
+            return
 
         self.manager.open_timeout(
             locker_id
@@ -349,7 +362,8 @@ class LockerController(QObject):
 
     def _complete_active_locker(
         self,
-        locker_id: int
+        locker_id: int,
+        command_serial=None
     ):
 
         if (
@@ -358,7 +372,16 @@ class LockerController(QObject):
         ):
             return
 
+        if (
+            command_serial is not None
+            and
+            self._active_command_serial
+            != command_serial
+        ):
+            return
+
         self._active_locker_id = None
+        self._active_command_serial = None
 
         QTimer.singleShot(
             self.next_locker_delay_ms,
@@ -455,11 +478,17 @@ class LockerController(QObject):
                 == locker_id
             ):
 
+                command_serial = (
+                    self._active_command_serial
+                )
+
                 QTimer.singleShot(
                     self.next_locker_delay_ms,
-                    lambda locker_id=locker_id:
+                    lambda locker_id=locker_id,
+                    command_serial=command_serial:
                     self._complete_active_locker(
-                        locker_id
+                        locker_id,
+                        command_serial
                     )
                 )
 

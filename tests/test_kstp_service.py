@@ -1,4 +1,4 @@
-﻿import socket
+import socket
 import time
 
 from PyQt5.QtCore import (
@@ -359,7 +359,7 @@ def test_release_round_trip_updates_database(
 # OPEN WITH UNKNOWN HARDWARE STATE
 # ============================================================
 
-def test_open_unknown_state_is_rejected(
+def test_open_unknown_state_is_accepted(
     tmp_path
 ):
 
@@ -384,6 +384,9 @@ def test_open_unknown_state_is_rejected(
 
         # No hardware feedback was provided.
         # Physical state therefore remains UNKNOWN.
+        #
+        # An explicit OPEN command must still be accepted
+        # and forwarded to the controller.
 
         client.sendall(
             encode_frame(
@@ -402,20 +405,20 @@ def test_open_unknown_state_is_rejected(
 
         assert (
             response.message_type
-            == MessageType.RESPONSE_ERROR
+            == MessageType.RESPONSE_OK
         )
 
         assert response.payload == {
-            "error":
-                "locker_state_unknown",
+            "result":
+                "open_requested",
             "locker_id": 1,
         }
 
-        # Controller must not be called when the physical
-        # state is unknown.
+        # UNKNOWN physical state must not block an explicit
+        # OPEN command.
         assert (
             controller.open_calls
-            == []
+            == [1]
         )
 
     finally:

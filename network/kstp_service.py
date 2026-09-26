@@ -1,8 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from PyQt5.QtCore import (
     QObject,
+    Qt,
+    pyqtProperty,
     pyqtSignal,
+    pyqtSlot,
 )
 
 from core.locker import (
@@ -57,6 +60,25 @@ class KstpApplicationService(QObject):
         str
     )
 
+    # QML-visible connection state notifier.
+    clientActiveChanged = pyqtSignal()
+
+    # Emitted only after an OPEN request has been accepted.
+    # Main.qml uses this to display the locker number.
+    lockerOpenDisplayRequested = pyqtSignal(
+        int,
+        arguments=["lockerId"]
+    )
+
+    # TCP callbacks originate from worker threads.
+    # This private signal transfers connection-state changes
+    # safely onto the Qt main thread.
+    _clientStateRequested = pyqtSignal(
+        bool,
+        str,
+        int
+    )
+
     def __init__(
         self,
         locker_manager,
@@ -68,6 +90,15 @@ class KstpApplicationService(QObject):
 
         super().__init__(
             parent
+        )
+
+        self._client_active = False
+        self._active_client_host = ""
+        self._active_client_port = 0
+
+        self._clientStateRequested.connect(
+            self._apply_client_state,
+            Qt.QueuedConnection
         )
 
         if locker_manager is None:
@@ -148,6 +179,89 @@ class KstpApplicationService(QObject):
     # PUBLIC STATE
     # ========================================================
 
+    @pyqtProperty(
+        bool,
+        notify=clientActiveChanged
+    )
+    def clientActive(self):
+
+        return self._client_active
+
+
+    @pyqtSlot(
+        bool,
+        str,
+        int
+    )
+    def _apply_client_state(
+        self,
+        connected: bool,
+        host: str,
+        port: int
+    ):
+
+        connected = bool(
+            connected
+        )
+
+        host = str(
+            host
+        )
+
+        port = int(
+            port
+        )
+
+        if connected:
+
+            state_changed = (
+                not self._client_active
+            )
+
+            self._client_active = True
+            self._active_client_host = host
+            self._active_client_port = port
+
+            if state_changed:
+                self.clientActiveChanged.emit()
+
+            print(
+                "KSTP | GUI STATE | CONNECTED"
+            )
+
+            return
+
+
+        # Ignore a stale disconnect belonging to an older
+        # connection if a newer client is already active.
+        if (
+            self._client_active
+            and
+            (
+                self._active_client_host != host
+                or
+                self._active_client_port != port
+            )
+        ):
+            return
+
+
+        state_changed = (
+            self._client_active
+        )
+
+        self._client_active = False
+        self._active_client_host = ""
+        self._active_client_port = 0
+
+        if state_changed:
+            self.clientActiveChanged.emit()
+
+        print(
+            "KSTP | GUI STATE | DISCONNECTED"
+        )
+
+
     @property
     def is_running(self) -> bool:
 
@@ -217,48 +331,9 @@ class KstpApplicationService(QObject):
                 "locker_not_found"
             )
 
-        # A known hardware fault takes priority.
-        if (
-            locker.fault
-            != LockerFault.NONE
-        ):
-
-            return (
-                False,
-                "locker_fault"
-            )
-
-        # Production NanoPi starts physical state as UNKNOWN
-        # until fresh hardware feedback is received.
-        if (
-            locker.actual_state
-            == LockerState.UNKNOWN
-        ):
-
-            return (
-                False,
-                "locker_state_unknown"
-            )
-
-        if (
-            locker.actual_state
-            == LockerState.OPEN
-        ):
-
-            return (
-                False,
-                "already_open"
-            )
-
-        if (
-            locker.expected_state
-            == ExpectedState.OPEN
-        ):
-
-            return (
-                False,
-                "open_already_pending"
-            )
+        # UNKNOWN is intentionally allowed here.
+        # An explicit OPEN request must still be delivered to
+        # the locker command path before fresh feedback exists.
 
         accepted = (
             self._locker_controller
@@ -268,6 +343,15 @@ class KstpApplicationService(QObject):
         )
 
         if accepted:
+
+            self.lockerOpenDisplayRequested.emit(
+                int(locker_id)
+            )
+
+            print(
+                "KSTP | OPEN DISPLAY | "
+                f"Locker={int(locker_id)}"
+            )
 
             return (
                 True,
@@ -331,6 +415,12 @@ class KstpApplicationService(QObject):
             port
         )
 
+        self._clientStateRequested.emit(
+            True,
+            host,
+            port
+        )
+
     def _on_client_disconnected(
         self,
         address
@@ -350,6 +440,12 @@ class KstpApplicationService(QObject):
         )
 
         self.clientDisconnected.emit(
+            host,
+            port
+        )
+
+        self._clientStateRequested.emit(
+            False,
             host,
             port
         )

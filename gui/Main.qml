@@ -361,7 +361,7 @@ ApplicationWindow {
             z: 3000
 
             ethernetConnected:
-                appState.ethernetConnected
+                kstpService.clientActive
 
             mainsAvailable:
                 appState.mainsAvailable
@@ -446,6 +446,193 @@ ApplicationWindow {
 
 
         // =====================================================
+        // OPEN LOCKER USER DISPLAY
+        // =====================================================
+
+        Connections {
+            target: kstpService
+
+            function onLockerOpenDisplayRequested(lockerId) {
+
+                openLockerPopup.showLocker(
+                    lockerId
+                )
+            }
+        }
+
+
+        Rectangle {
+            id: openLockerPopup
+
+            anchors.fill: parent
+
+            z: 10000
+
+            visible: false
+
+            color: "#0B1220"
+
+            property int lockerId: 0
+
+
+            function showLocker(value) {
+
+                lockerId = Number(value)
+
+                visible = true
+
+                openLockerPopupTimer.restart()
+
+                root.notifyUserActivity()
+
+                console.log(
+                    "OPEN LOCKER POPUP -> "
+                    + lockerId
+                )
+            }
+
+
+            function closePopup() {
+
+                openLockerPopupTimer.stop()
+
+                visible = false
+
+                root.notifyUserActivity()
+            }
+
+
+            // Consume clicks/touches so controls behind the
+            // full-screen overlay cannot be activated.
+            MouseArea {
+                anchors.fill: parent
+            }
+
+
+            Column {
+                width: 620
+
+                anchors.centerIn: parent
+
+                spacing: 5
+
+                LayoutMirroring.enabled: true
+                LayoutMirroring.childrenInherit: true
+
+
+                Text {
+                    width: parent.width
+
+                    text:
+                        qsTr("\u06A9\u0645\u062F \u0634\u0645\u0627")
+
+                    color: "#E2E8F0"
+
+                    font.pixelSize: 34
+                    font.bold: true
+
+                    horizontalAlignment:
+                        Text.AlignHCenter
+                }
+
+
+                Text {
+                    width: parent.width
+
+                    text:
+                        openLockerPopup.lockerId
+
+                    color: "#F8FAFC"
+
+                    font.pixelSize: 132
+                    font.bold: true
+
+                    horizontalAlignment:
+                        Text.AlignHCenter
+
+                    verticalAlignment:
+                        Text.AlignVCenter
+                }
+
+
+                Item {
+                    width: 1
+                    height: 8
+                }
+
+
+                Button {
+                    id: closeOpenLockerButton
+
+                    width: 170
+                    height: 46
+
+                    anchors.horizontalCenter:
+                        parent.horizontalCenter
+
+                    text:
+                        qsTr(
+                            "\u0628\u0633\u062A\u0646"
+                        )
+
+
+                    onClicked: {
+
+                        openLockerPopup.closePopup()
+                    }
+
+
+                    background: Rectangle {
+
+                        radius: 12
+
+                        color:
+                            closeOpenLockerButton.pressed
+                            ? "#475569"
+                            : "#334155"
+
+                        border.width: 1
+                        border.color: "#64748B"
+                    }
+
+
+                    contentItem: Text {
+
+                        text:
+                            closeOpenLockerButton.text
+
+                        color: "#F8FAFC"
+
+                        font.pixelSize: 19
+                        font.bold: true
+
+                        horizontalAlignment:
+                            Text.AlignHCenter
+
+                        verticalAlignment:
+                            Text.AlignVCenter
+                    }
+                }
+            }
+
+
+            Timer {
+                id: openLockerPopupTimer
+
+                interval: 30000
+
+                repeat: false
+
+
+                onTriggered: {
+
+                    openLockerPopup.closePopup()
+                }
+            }
+        }
+
+
+        // =====================================================
         // GLOBAL USER ACTIVITY
         // =====================================================
 
@@ -454,6 +641,8 @@ ApplicationWindow {
 
             enabled:
                 !globalStatusBar.warningVisible
+                &&
+                !openLockerPopup.visible
 
             // Restart on physical press/release. This also covers
             // touch screens, not only mouse clicks.
@@ -489,6 +678,8 @@ ApplicationWindow {
             // Do not hide an active warning popup.
             if (
                 globalStatusBar.warningVisible
+                ||
+                openLockerPopup.visible
             ) {
 
                 restart()

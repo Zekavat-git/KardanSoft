@@ -274,6 +274,11 @@ def main():
     )
 
     context.setContextProperty(
+        "kstpService",
+        kstp_service
+    )
+
+    context.setContextProperty(
         "authManager",
         auth_manager
     )
